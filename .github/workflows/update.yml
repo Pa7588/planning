@@ -1,0 +1,35 @@
+name: Générer le planning
+
+on:
+  schedule:
+    # Tous les jours à 6h00 UTC (8h heure française)
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+    # Bouton "Run workflow" manuel sur GitHub
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installer les dépendances
+        run: pip install requests beautifulsoup4
+
+      - name: Générer le planning
+        run: python generate.py
+
+      - name: Commit et push si changement
+        run: |
+          git config user.name "Planning Bot"
+          git config user.email "bot@planning"
+          git add index.html
+          git diff --staged --quiet || git commit -m "Planning mis à jour le $(date '+%d/%m/%Y à %H:%M')"
+          git push
