@@ -1,0 +1,53 @@
+name: Générer le planning
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Installer les dépendances
+        run: pip install requests beautifulsoup4
+
+      - name: Générer le planning
+        run: python generate.py
+
+      - name: Commit et push
+        run: |
+          git config user.name "Planning Bot"
+          git config user.email "bot@planning"
+          git add index.html
+          git diff --staged --quiet || git commit -m "Planning mis à jour le $(date '+%d/%m/%Y à %H:%M')"
+          git push
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
