@@ -525,8 +525,12 @@ def generer_html(planning, date_maj):
                 for s in cell["seniors"]:
                     seniors_html += f'<span class="slot-senior">{s}</span>'
 
+                seniors_data = "|".join(cell["seniors"]).replace('"', '&quot;')
                 slots += (
                     f'<div class="slot {groupe}" data-nom="{nom_attr}" '
+                    f'data-label="{label.replace(chr(34), chr(39))}" '
+                    f'data-seniors="{seniors_data}" '
+                    f'data-couleur="{c}" '
                     f'style="{couleur_css(c)}" title="{nom_attr} — {label}">'
                     f'<span class="slot-name">{prenom}</span>'
                     f'{seniors_html}'
@@ -643,9 +647,62 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
   .header h1 {{ font-size:1.4rem; }}
   .cal-grid {{ grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; }}
   .day-cell {{ padding:3px; min-height:90px; }}
-  .slot {{ font-size:0.55rem; }}
+  .slot {{ font-size:0.55rem; cursor:pointer; }}
   .slot-poste,.slot-senior {{ display:none; }}
   .custom-panel {{ width:100%; }}
+}}
+/* POPUP DETAIL */
+.popup-overlay {{
+  display:none; position:fixed; inset:0;
+  background:rgba(0,0,0,0.6); z-index:300;
+  align-items:flex-end; justify-content:center;
+}}
+.popup-overlay.open {{ display:flex; }}
+.popup-card {{
+  background:var(--surface); border-radius:16px 16px 0 0;
+  padding:24px; width:100%; max-width:480px;
+  border-top:1px solid var(--border);
+  animation:slideUp 0.2s ease;
+  max-height:70vh; overflow-y:auto;
+}}
+@keyframes slideUp {{
+  from {{ transform:translateY(100%); opacity:0; }}
+  to   {{ transform:translateY(0);    opacity:1; }}
+}}
+.popup-handle {{
+  width:40px; height:4px; background:var(--border);
+  border-radius:2px; margin:0 auto 20px;
+}}
+.popup-nom {{
+  font-family:'Syne',sans-serif; font-size:1.1rem;
+  font-weight:800; margin-bottom:4px;
+}}
+.popup-poste {{
+  font-size:0.75rem; color:var(--text-dim); margin-bottom:16px;
+}}
+.popup-badge {{
+  display:inline-block; padding:4px 10px; border-radius:6px;
+  font-size:0.7rem; font-weight:500; margin-bottom:16px;
+}}
+.popup-seniors-title {{
+  font-size:0.65rem; text-transform:uppercase; letter-spacing:0.1em;
+  color:var(--text-dim); margin-bottom:8px;
+}}
+.popup-senior-item {{
+  display:flex; align-items:center; gap:10px;
+  padding:8px 0; border-bottom:1px solid var(--border);
+  font-size:0.8rem;
+}}
+.popup-senior-item:last-child {{ border-bottom:none; }}
+.popup-senior-dot {{
+  width:8px; height:8px; border-radius:50%;
+  background:var(--accent); flex-shrink:0;
+}}
+.popup-close {{
+  width:100%; margin-top:16px; padding:12px;
+  background:var(--border); border:none; border-radius:8px;
+  color:var(--text); font-family:'DM Mono',monospace;
+  font-size:0.8rem; cursor:pointer;
 }}
 </style>
 </head>
@@ -746,7 +803,74 @@ function showMonth(m) {{
 const savedMois = localStorage.getItem('planning_mois');
 showMonth(savedMois || '{mois_defaut}');
 setFilter(currentFilter);
+
+// ── POPUP DETAIL (mobile) ──────────────────────────────────────────────────
+const COULEURS_LABEL = {{
+  'vert': ['#1a6b3a','#d4edda','Libre'],
+  'rouge': ['#7f1d1d','#fee2e2','Poste de jour'],
+  'jaune': ['#78350f','#fef3c7','Garde'],
+  'jaune-repos': ['#78350f','#fef9e7','Repos de garde'],
+  'violet': ['#3b0764','#ede9fe','LDS'],
+  'violet-repos': ['#3b0764','#f5f3ff','Repos LDS'],
+  'orange': ['#7c2d12','#ffedd5','Double poste'],
+}};
+
+function openPopup(nom, label, seniors, couleur) {{
+  const cl = COULEURS_LABEL[couleur] || ['#374151','#f3f4f6',''];
+  document.getElementById('popup-nom').textContent = nom;
+  document.getElementById('popup-poste').textContent = label;
+  const badge = document.getElementById('popup-badge');
+  badge.textContent = cl[2];
+  badge.style.cssText = `color:${{cl[0]}};background:${{cl[1]}};`;
+  const cont = document.getElementById('popup-seniors-cont');
+  if (seniors && seniors.length > 0) {{
+    cont.style.display = 'block';
+    document.getElementById('popup-seniors-list').innerHTML =
+      seniors.map(s => `<div class="popup-senior-item"><div class="popup-senior-dot"></div>${{s}}</div>`).join('');
+  }} else {{
+    cont.style.display = 'none';
+  }}
+  document.getElementById('popupOverlay').classList.add('open');
+}}
+
+function closePopup() {{
+  document.getElementById('popupOverlay').classList.remove('open');
+}}
+
+// Attacher les events sur tous les slots
+document.querySelectorAll('.slot').forEach(s => {{
+  s.addEventListener('click', (e) => {{
+    // Sur desktop (>900px) ne pas ouvrir la popup
+    if (window.innerWidth > 900) return;
+    e.stopPropagation();
+    const nom = s.dataset.nom;
+    const label = s.dataset.label || '';
+    const seniors = (s.dataset.seniors || '').split('|').filter(x => x);
+    const couleur = s.dataset.couleur || 'vert';
+    openPopup(nom, label, seniors, couleur);
+  }});
+}});
+
+document.getElementById('popupOverlay').addEventListener('click', function(e) {{
+  if (e.target === this) closePopup();
+}});
 </script>
+
+<!-- POPUP DETAIL -->
+<div class="popup-overlay" id="popupOverlay">
+  <div class="popup-card">
+    <div class="popup-handle"></div>
+    <div class="popup-nom" id="popup-nom"></div>
+    <div class="popup-poste" id="popup-poste"></div>
+    <span class="popup-badge" id="popup-badge"></span>
+    <div id="popup-seniors-cont">
+      <div class="popup-seniors-title">Seniors</div>
+      <div id="popup-seniors-list"></div>
+    </div>
+    <button class="popup-close" onclick="closePopup()">Fermer</button>
+  </div>
+</div>
+
 </body>
 </html>'''
 
