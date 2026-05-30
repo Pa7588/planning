@@ -8,34 +8,15 @@ import json
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 CIBLES_URG = [
-    "M. Belhomme De Franqueville",
-    "L. Okoyi Ossouka Mapangou",
-    "E. Beros",
-    "P. Messina",
-    "J. Peyres",
-    "S. Niane",
-    "C. Vasseur",
-    "J. Blanc",
-    "A. Khadraoui",
-    "M. Harhour",
-    "E. Perthuisot",
-    "R. Pebay",
-    "I. Mokhtari",
-    "A. Ponton",
-    "E. Macabiau",
-    "J. Langlois",
-    "A. Wilhelm",
-    "C. Viola",
+    "M. Belhomme De Franqueville", "L. Okoyi Ossouka Mapangou", "E. Beros",
+    "P. Messina", "J. Peyres", "S. Niane", "C. Vasseur", "J. Blanc",
+    "A. Khadraoui", "M. Harhour", "E. Perthuisot", "R. Pebay", "I. Mokhtari",
+    "A. Ponton", "E. Macabiau", "J. Langlois", "A. Wilhelm", "C. Viola",
 ]
 
 CIBLES_GERIA = [
-    "P. Lorette",
-    "Y. Esteves",
-    "E. Salgues",
-    "S. Kassou",
-    "T. Bourot",
-    "M. Gratesac",
-    "C. Gorra",
+    "P. Lorette", "Y. Esteves", "E. Salgues", "S. Kassou",
+    "T. Bourot", "M. Gratesac", "C. Gorra",
 ]
 
 CIBLES = CIBLES_URG + CIBLES_GERIA
@@ -48,6 +29,8 @@ PLANNINGS = {
     "sauv":            "https://app.planning.lifen.health/external/plannings/bfe39d8a0bc17b5e8906",
     "geriatrie":       "https://app.planning.lifen.health/external/plannings/55ed4e1c59041a69a363",
 }
+
+PM_URL = "https://www.planning-medical.com/p.php?s=532babfe6f45ec233bac467f086a3f8a&b=0"
 
 MOIS_FR = ["Janvier","Février","Mars","Avril","Mai","Juin",
            "Juillet","Août","Septembre","Octobre","Novembre","Décembre"]
@@ -64,46 +47,93 @@ PARASITES = {
     "fr", "en", "tableau de bord", "agenda", "échanges", "disponibilités",
 }
 
-# Postes gériatrie reconnus
 POSTES_GERIA = {
-    "garonne-soins palliatifs",
-    "garonne-soins palliatifs-pum",
-    "pug-albarède",
-    "pug albarède",
-    "pug rangueil",
-    "pug-rangueil jf",
+    "garonne-soins palliatifs", "garonne-soins palliatifs-pum",
+    "pug-albarède", "pug albarède", "pug rangueil", "pug-rangueil jf",
 }
 
-# Jours fériés 2026 (date → True)
 JOURS_FERIES = {
-    date(2026, 5,  8),   # Victoire 1945
-    date(2026, 5, 14),   # Ascension
-    date(2026, 5, 25),   # Lundi de Pentecôte
-    date(2026, 7, 14),   # Fête nationale
-    date(2026, 8, 15),   # Assomption
-    date(2026, 11, 1),   # Toussaint
+    date(2026, 5,  8), date(2026, 5, 14), date(2026, 5, 25),
+    date(2026, 7, 14), date(2026, 8, 15), date(2026, 11, 1),
 }
 
 DEBUG = True
 
+# ─── TABLE DE CORRESPONDANCE INTERNE → SENIOR(S) ──────────────────────────────
+# Chaque entrée : (fragment_poste, condition) -> [cles_seniors]
+# Les clés seniors sont les noms EXACTS (normalisés) de planning-medical
+
+def seniors_pour_poste(poste, jour_date=None):
+    p = poste.lower()
+    p_norm = re.sub(r'\s+', ' ', p)
+
+    # Détection des types de garde
+    est_13_8  = bool(re.search(r'13\s*h?\s*[-–]\s*8', p))   # 13h-8h : jour + nuit
+    est_18_8  = bool(re.search(r'18\s*h?\s*[-–]\s*8', p))   # 18h-8h : nuit seul
+    est_8_13  = bool(re.search(r'8\s*h?\s*[-–]\s*13', p))   # 8h-13h : jour seul
+    est_nuit  = 'nuit' in p or 'soir' in p or est_13_8 or est_18_8
+
+    # ── RANGUEIL ──────────────────────────────────────────────────────────────
+    if 'amct 1' in p_norm:
+        if est_13_8: return ['MAO', 'MAO NUIT']
+        return ['MAO NUIT'] if est_nuit else ['MAO']
+
+    if 'amct 2' in p_norm:
+        if est_13_8: return ['AMCT', 'AMCT NUIT']
+        return ['AMCT NUIT'] if est_nuit else ['AMCT']
+
+    if 'cmct' in p_norm:
+        if est_13_8: return ['MAO', 'SAUV R', 'MAO NUIT', 'SAUV R NUIT']
+        if est_18_8: return ['MAO NUIT', 'SAUV R NUIT']
+        return ['MAO NUIT', 'SAUV R NUIT'] if est_nuit else ['MAO', 'SAUV R']
+
+    if 'uhcd r' in p_norm or ('uhcd' in p_norm and 'purpan' not in p_norm):
+        return [] if est_nuit else ['UHCD R', 'MAO', 'SAUV R']
+
+    if 'sauv rangueil' in p_norm or ('sauv r' in p_norm and 'purpan' not in p_norm):
+        if est_13_8: return ['SAUV R', 'SAUV R NUIT']
+        return ['SAUV R NUIT'] if est_nuit else ['SAUV R']
+
+    if 'ua' in p_norm and ('jour' in p_norm or 'rééval' in p_norm):
+        return ['AMT Med Rev Purpan']
+
+    if 'ua' in p_norm and 'we' in p_norm:
+        return ['AMT Med Rev Purpan']
+
+    if 'ua' in p_norm:
+        return ['AMT Med Rev Soir Purpan']
+
+    # ── PURPAN ────────────────────────────────────────────────────────────────
+    if 'hub 1' in p_norm:
+        if est_13_8: return ['AMT HUB 1 Purpan', 'AMT HUB 1 Nuit']
+        return ['AMT HUB 1 Nuit'] if est_nuit else ['AMT HUB 1 Purpan']
+
+    if 'hub 2' in p_norm:
+        if est_13_8: return ['AMT HUB 2 Purpan', 'AMT HUB 2 Nuit']
+        return ['AMT HUB 2 Nuit'] if est_nuit else ['AMT HUB 2 Purpan']
+
+    if 'hub 3' in p_norm:
+        if est_13_8: return ['AMT HUB 3 Purpan', 'AMT HUB 3 Soir']
+        return ['AMT HUB 3 Soir'] if est_nuit else ['AMT HUB 3 Purpan']
+
+    if 'sauv purpan' in p_norm or ('sauv' in p_norm and 'purpan' in p_norm):
+        if est_13_8: return ['SAUV / TFC Purpan', 'SAUV / MCO / TFC Nuit']
+        return ['SAUV / MCO / TFC Nuit'] if est_nuit else ['SAUV / TFC Purpan']
+
+    if re.search(r'\blds\b', p_norm):
+        return []
+
+    return []
+
 # ─── HELPERS DATE ─────────────────────────────────────────────────────────────
 
-def est_jour_ferie(d):
-    return d in JOURS_FERIES
-
-def est_weekend_ou_ferie(d):
-    return d.weekday() >= 5 or est_jour_ferie(d)
-
-def est_samedi(d):
-    return d.weekday() == 6 - 1  # samedi = weekday 5
-
-def est_dimanche_ou_ferie(d):
-    return d.weekday() == 6 or est_jour_ferie(d)
+def est_ferie(d):            return d in JOURS_FERIES
+def est_samedi(d):           return d.weekday() == 5
+def est_dimanche_ou_ferie(d): return d.weekday() == 6 or est_ferie(d)
 
 # ─── CATÉGORISATION ───────────────────────────────────────────────────────────
 
 def categoriser_urg(poste):
-    """Catégorisation pour les postes urgences."""
     p = poste.lower()
     if re.search(r'\blds\b', p):
         return ('violet', 'lds')
@@ -120,26 +150,14 @@ def categoriser_urg(poste):
     return ('rouge', 'jour')
 
 def categoriser_geria(poste, jour_date):
-    """
-    Catégorisation pour les postes gériatrie selon la date.
-    - Semaine hors JF : stage jour + garde soir → orange + repos lendemain
-    - Samedi : garde 13h-8h30 → jaune + repos lendemain
-    - Dimanche ou JF : garde 24h mais indispo journée → rouge + repos lendemain
-    """
     p = poste.lower()
-
-    # PUG-Rangueil JF : traité comme dimanche/JF quelle que soit la date
     if 'jf' in p:
         return ('rouge', 'geria-jf')
-
     if est_dimanche_ou_ferie(jour_date):
-        # Garde 24h mais journée bloquée → rouge
         return ('rouge', 'geria-dim')
     elif est_samedi(jour_date):
-        # Garde 13h-8h30 → jaune
         return ('jaune', 'geria-sam')
     else:
-        # Semaine : stage + garde soir → orange
         return ('orange', 'geria-semaine')
 
 def repos_apres_garde_urg(poste, type_poste):
@@ -155,7 +173,7 @@ def repos_apres_garde_urg(poste, type_poste):
 def est_poste_geria(poste):
     return poste.lower().strip() in POSTES_GERIA
 
-# ─── FETCH ────────────────────────────────────────────────────────────────────
+# ─── FETCH LIFEN ──────────────────────────────────────────────────────────────
 
 def fetch_planning(nom, url):
     try:
@@ -169,10 +187,79 @@ def fetch_planning(nom, url):
                 f.write(texte)
         return texte
     except Exception as e:
-        print(f"  ⚠ Erreur fetch {url}: {e}")
+        print(f"  Erreur fetch {url}: {e}")
         return ""
 
-# ─── PARSER ───────────────────────────────────────────────────────────────────
+# ─── FETCH SENIORS ────────────────────────────────────────────────────────────
+
+def fetch_seniors():
+    print("  -> Scraping planning-medical...")
+    seniors = {}
+    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+
+    try:
+        r = requests.get(PM_URL, timeout=20, headers=headers)
+        r.raise_for_status()
+    except Exception as e:
+        print(f"  Erreur: {e}")
+        return seniors
+
+    soup = BeautifulSoup(r.text, "html.parser")
+    table = soup.find("table")
+    if not table:
+        print("  Pas de tableau trouvé")
+        return seniors
+
+    rows = table.find_all("tr")
+    date_courante = None
+    for row in rows:
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+        # Chercher une date dans n'importe quelle cellule
+        for cell in cells:
+            txt_d = cell.get_text(separator="|", strip=True)
+            m = re.search(r"(\d{2}/\d{2}/\d{4})", txt_d)
+            if m:
+                try:
+                    date_courante = datetime.strptime(m.group(1), "%d/%m/%Y").date()
+                except Exception:
+                    pass
+                break
+        if date_courante is None:
+            continue
+        date_iso = date_courante.isoformat()
+        if date_iso not in seniors:
+            seniors[date_iso] = {}
+        for cell in cells:
+                span_min = cell.find("span", class_="min")
+                if not span_min:
+                    continue
+                poste_s = re.sub(r'\s+', ' ', span_min.get_text(strip=True))
+                if not poste_s or len(poste_s) > 50:
+                    continue
+
+                # Cas 1 : poste à pourvoir
+                span_apourvoir = cell.find("span", class_="apourvoir")
+                if span_apourvoir:
+                    seniors[date_iso][poste_s] = "À pourvoir"
+                    continue
+
+                # Cas 2 : senior nommé avec attribut pers
+                span_pers = cell.find("span", attrs={"pers": True})
+                if span_pers:
+                    nom_court_s = span_pers.get_text(strip=True).replace("\xa0", " ").strip()
+                    nom_long_s = span_pers.get("title", nom_court_s).strip()
+                    if nom_court_s:
+                        seniors[date_iso][poste_s] = {"court": nom_court_s, "long": nom_long_s}
+
+    print(f"  -> {len(seniors)} jours charges")
+    if seniors:
+        first = sorted(seniors.keys())[0]
+        print(f"     Exemple {first}: {list(seniors[first].items())[:3]}")
+    return seniors
+
+# ─── PARSER LIFEN ─────────────────────────────────────────────────────────────
 
 def est_nom_personne(s):
     return bool(re.match(r'^[A-Z]\.\s+[A-Z][a-zA-ZÀ-ÿ\s\-]+$', s))
@@ -180,9 +267,9 @@ def est_nom_personne(s):
 def est_poste_urg(s):
     mots = s.lower()
     return any(k in mots for k in [
-        'hub', 'amct', 'cmct', 'lds', 'sauv', 'ua ', 'ua/', 'nuit', 'jour',
-        'sam ', 'we/', 'week-end', 'rééval', '8h', '13h', '18h',
-        '8-13', '13-8', '18-8',
+        'hub', 'amct', 'cmct', 'lds', 'sauv', 'ua ', 'ua/', 'uhcd',
+        'nuit', 'jour', 'sam ', 'we/', 'week-end', 'rééval',
+        '8h', '13h', '18h', '8-13', '13-8', '18-8',
     ])
 
 def est_poste_valide(s):
@@ -232,20 +319,22 @@ def parse_texte(texte):
         if est_poste_valide(ligne):
             poste_courant = ligne
             continue
-
     return resultats
 
 # ─── CONSTRUCTION DU PLANNING ─────────────────────────────────────────────────
 
-def construire_planning(toutes_entrees):
+def construire_planning(toutes_entrees, seniors):
     planning = {}
     for m in MOIS_FR:
         planning[m] = {}
         for d in range(1, 32):
             planning[m][d] = {
-                nom: {"couleur": "vert", "postes": [], "repos": False}
+                nom: {"couleur": "vert", "postes": [], "repos": False, "seniors": []}
                 for nom in CIBLES
             }
+
+    nb_seniors_trouves = 0
+    manquants = {}  # pour debug
 
     for e in toutes_entrees:
         nom = e["personne"]
@@ -253,7 +342,6 @@ def construire_planning(toutes_entrees):
             continue
         mois, jour, poste = e["mois"], e["jour"], e["poste"]
 
-        # Calcul de la date réelle pour la logique gériatrie
         try:
             jour_date = date(2026, MOIS_NUM[mois], jour)
         except ValueError:
@@ -261,15 +349,13 @@ def construire_planning(toutes_entrees):
 
         cell = planning[mois][jour][nom]
 
-        # Choisir la logique selon le type de poste
         if est_poste_geria(poste):
             couleur, type_poste = categoriser_geria(poste, jour_date)
-            genere_repos = True  # toujours en gériatrie
+            genere_repos = True
         else:
             couleur, type_poste = categoriser_urg(poste)
             genere_repos = repos_apres_garde_urg(poste, type_poste)
 
-        # Remplissage de la cellule
         if cell["repos"]:
             if type_poste not in ('lds',):
                 cell["postes"].append(f"⚠ {poste}")
@@ -282,7 +368,41 @@ def construire_planning(toutes_entrees):
                 cell["postes"].append(poste)
                 cell["couleur"] = "orange"
 
-        # Repos le lendemain
+        # Seniors
+        date_iso = jour_date.isoformat()
+        jour_seniors = seniors.get(date_iso, {})
+        cles = seniors_pour_poste(poste, jour_date)
+
+        for cle in cles:
+            cle_norm = re.sub(r'\s+', ' ', cle.lower().strip())
+            trouve = False
+            for k, v in jour_seniors.items():
+                k_norm = re.sub(r'\s+', ' ', k.lower().strip())
+                if cle_norm == k_norm:
+                    if isinstance(v, dict):
+                        if 'pourvoir' in v.get('long','').lower() or 'pourvoir' in v.get('court','').lower():
+                            label = "Pas de senior"
+                        else:
+                            # Format: "Vinnemann Nathalie (MAO)"
+                            label = f"{v['long']} ({cle})"
+                    elif isinstance(v, str):
+                        if 'pourvoir' in v.lower():
+                            label = "Pas de senior"
+                        else:
+                            label = f"{v} ({cle})"
+                    else:
+                        label = "Pas de senior"
+                    if label not in cell["seniors"]:
+                        cell["seniors"].append(label)
+                        nb_seniors_trouves += 1
+                    trouve = True
+                    break
+            if not trouve and jour_seniors:
+                # Log les manquants pour debug
+                key = f"{poste} -> {cle}"
+                if key not in manquants:
+                    manquants[key] = date_iso
+
         if genere_repos:
             d_l = jour_date + timedelta(days=1)
             m_l = MOIS_FR[d_l.month - 1]
@@ -295,6 +415,17 @@ def construire_planning(toutes_entrees):
                     cell_r["couleur"] = couleur_r
                     cell_r["postes"].append(label_r)
                     cell_r["repos"] = True
+
+    print(f"  -> {nb_seniors_trouves} associations interne-senior trouvees")
+
+    # Ecrire les manquants dans un fichier debug
+    if manquants:
+        with open("debug_manquants.txt", "w", encoding="utf-8") as f:
+            f.write("CORRESPONDANCES MANQUANTES\n")
+            f.write("(poste interne -> cle senior cherchee, premier jour concerne)\n\n")
+            for k, v in sorted(manquants.items()):
+                f.write(f"  {k}  [ex: {v}]\n")
+        print(f"  -> {len(manquants)} correspondances manquantes -> debug_manquants.txt")
 
     return planning
 
@@ -340,7 +471,6 @@ def generer_html(planning, date_maj):
         for m in MOIS_FR
     )
 
-    # Checkboxes panneau personnalisé
     checkboxes_urg = ""
     for nom in CIBLES_URG:
         sid = re.sub(r'[\s\.\-]', '_', nom)
@@ -369,8 +499,7 @@ def generer_html(planning, date_maj):
         nb_j = nb_jours_mois(mois)
         a_donnees = any(
             planning[mois][d][n]["postes"]
-            for d in range(1, nb_j+1)
-            for n in CIBLES
+            for d in range(1, nb_j+1) for n in CIBLES
         )
         jours_html = "".join('<div class="day-cell empty"></div>' for _ in range(decalage))
 
@@ -379,7 +508,7 @@ def generer_html(planning, date_maj):
                 jour_date = date(2026, idx, d)
             except ValueError:
                 continue
-            is_we = jour_date.weekday() >= 5
+            is_we    = jour_date.weekday() >= 5
             is_ferie = jour_date in JOURS_FERIES
             is_today = (jour_date == today)
 
@@ -391,18 +520,24 @@ def generer_html(planning, date_maj):
                 prenom = nom_court(nom)
                 groupe = "urg" if nom in urg_set else "geria"
                 nom_attr = nom.replace('"', '&quot;')
+
+                seniors_html = ""
+                for s in cell["seniors"]:
+                    seniors_html += f'<span class="slot-senior">{s}</span>'
+
                 slots += (
                     f'<div class="slot {groupe}" data-nom="{nom_attr}" '
                     f'style="{couleur_css(c)}" title="{nom_attr} — {label}">'
                     f'<span class="slot-name">{prenom}</span>'
+                    f'{seniors_html}'
                     f'<span class="slot-poste">{label}</span></div>'
                 )
 
-            we_class     = " weekend" if is_we else ""
-            ferie_class  = " ferie"   if is_ferie else ""
-            today_class  = " today"   if is_today else ""
-            today_badge  = '<span class="today-badge">Aujourd\'hui</span>' if is_today else ""
-            ferie_badge  = '<span class="ferie-badge">JF</span>' if is_ferie else ""
+            we_class    = " weekend" if is_we else ""
+            ferie_class = " ferie"   if is_ferie else ""
+            today_class = " today"   if is_today else ""
+            today_badge = "<span class='today-badge'>Aujourd'hui</span>" if is_today else ""
+            ferie_badge = "<span class='ferie-badge'>JF</span>" if is_ferie else ""
 
             jours_html += (
                 f'<div class="day-cell{we_class}{ferie_class}{today_class}">'
@@ -499,7 +634,8 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 .slot.urg   {{ border-left:2px solid #c0392b55; }}
 .slot.geria {{ border-left:2px solid #1a6b3a55; }}
 .slot-name {{ font-weight:500; }}
-.slot-poste {{ opacity:0.8; font-size:0.58rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
+.slot-senior {{ font-size:0.55rem; font-style:italic; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0.85; }}
+.slot-poste {{ opacity:0.75; font-size:0.56rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
 .overlay {{ display:none; position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:99; }}
 .overlay.open {{ display:block; }}
 @media (max-width:900px) {{
@@ -508,15 +644,13 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
   .cal-grid {{ grid-template-columns:repeat(7,minmax(0,1fr)); gap:2px; }}
   .day-cell {{ padding:3px; min-height:90px; }}
   .slot {{ font-size:0.55rem; }}
-  .slot-poste {{ display:none; }}
+  .slot-poste,.slot-senior {{ display:none; }}
   .custom-panel {{ width:100%; }}
 }}
 </style>
 </head>
 <body>
-
 <div class="overlay" id="overlay" onclick="closePanel()"></div>
-
 <div class="custom-panel" id="customPanel">
   <div class="panel-header">
     <h3>Sélection</h3>
@@ -533,7 +667,6 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
   <div class="panel-group-title geria-title">Gériatrie</div>
   <div id="cbsGeria">{checkboxes_geria}</div>
 </div>
-
 <div class="header">
   <h1>Planning</h1>
   <div class="filter-bar">
@@ -544,37 +677,31 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
   </div>
   <div class="maj-badge">⟳ Mis à jour le {date_maj}</div>
 </div>
-
 <div class="legende">{legende_html}</div>
 <div class="tabs">{mois_tabs}</div>
 <div class="content">{mois_sections}</div>
-
 <script>
 const CIBLES_URG   = {cibles_urg_json};
 const CIBLES_GERIA = {cibles_geria_json};
 const CIBLES_ALL   = {cibles_all_json};
-
 let currentFilter = localStorage.getItem('planning_filtre') || 'tous';
 let customSet = new Set(JSON.parse(localStorage.getItem('planning_custom') || 'null') || CIBLES_ALL);
-
 function applyVisibility(visibleSet) {{
   document.querySelectorAll('.slot').forEach(s => {{
     s.classList.toggle('hidden', !visibleSet.has(s.dataset.nom));
   }});
 }}
-
 function setFilter(f) {{
   currentFilter = f;
   localStorage.setItem('planning_filtre', f);
   document.querySelectorAll('.filter-btn').forEach(b => {{
     b.classList.toggle('active', b.dataset.f === f);
   }});
-  if (f === 'tous')  applyVisibility(new Set(CIBLES_ALL));
-  if (f === 'urg')   applyVisibility(new Set(CIBLES_URG));
-  if (f === 'geria') applyVisibility(new Set(CIBLES_GERIA));
+  if (f === 'tous')   applyVisibility(new Set(CIBLES_ALL));
+  if (f === 'urg')    applyVisibility(new Set(CIBLES_URG));
+  if (f === 'geria')  applyVisibility(new Set(CIBLES_GERIA));
   if (f === 'custom') applyCustom();
 }}
-
 function applyCustom() {{
   customSet = new Set(
     [...document.querySelectorAll('#customPanel input[type=checkbox]')]
@@ -583,7 +710,6 @@ function applyCustom() {{
   localStorage.setItem('planning_custom', JSON.stringify([...customSet]));
   applyVisibility(customSet);
 }}
-
 function openPanel() {{
   document.querySelectorAll('#customPanel input[type=checkbox]').forEach(cb => {{
     cb.checked = customSet.has(cb.dataset.nom);
@@ -597,12 +723,10 @@ function openPanel() {{
   localStorage.setItem('planning_filtre', 'custom');
   applyCustom();
 }}
-
 function closePanel() {{
   document.getElementById('customPanel').classList.remove('open');
   document.getElementById('overlay').classList.remove('open');
 }}
-
 function selectAll()  {{ document.querySelectorAll('#customPanel input').forEach(cb => cb.checked=true);  applyCustom(); }}
 function selectNone() {{ document.querySelectorAll('#customPanel input').forEach(cb => cb.checked=false); applyCustom(); }}
 function selectGroup(g) {{
@@ -610,7 +734,6 @@ function selectGroup(g) {{
   document.querySelectorAll('#customPanel input').forEach(cb => {{ cb.checked = s.has(cb.dataset.nom); }});
   applyCustom();
 }}
-
 function showMonth(m) {{
   document.querySelectorAll('.month-section').forEach(el => el.style.display='none');
   document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
@@ -620,7 +743,6 @@ function showMonth(m) {{
   if(btn) btn.classList.add('active');
   localStorage.setItem('planning_mois',m);
 }}
-
 const savedMois = localStorage.getItem('planning_mois');
 showMonth(savedMois || '{mois_defaut}');
 setFilter(currentFilter);
@@ -628,35 +750,27 @@ setFilter(currentFilter);
 </body>
 </html>'''
 
-
 # ─── MAIN ─────────────────────────────────────────────────────────────────────
 
 def main():
-    print("🏥 Génération du planning...")
+    print("Generation du planning...")
+    seniors = fetch_seniors()
+
     toutes_entrees = []
     for nom, url in PLANNINGS.items():
-        print(f"  → Fetch {nom}...")
+        print(f"  -> Fetch {nom}...")
         texte = fetch_planning(nom, url)
         entrees = parse_texte(texte)
         cibles = [e for e in entrees if e["personne"] in CIBLES]
-        print(f"     {len(entrees)} entrées, dont {len(cibles)} pour les cibles")
-        if DEBUG and cibles:
-            for e in cibles[:2]:
-                print(f"       {e}")
+        print(f"     {len(entrees)} entrees, dont {len(cibles)} pour les cibles")
         toutes_entrees.extend(entrees)
 
-    print(f"\n  Total : {len(toutes_entrees)} entrées")
-    for nom in CIBLES:
-        n = sum(1 for e in toutes_entrees if e["personne"] == nom)
-        if n > 0:
-            print(f"    {nom}: {n} entrées")
-
-    planning = construire_planning(toutes_entrees)
-    date_maj = datetime.now().strftime("%d/%m/%Y à %H:%M")
+    planning = construire_planning(toutes_entrees, seniors)
+    date_maj = datetime.now().strftime("%d/%m/%Y a %H:%M")
     html = generer_html(planning, date_maj)
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
-    print(f"\n✅ index.html généré ({len(html)//1024} Ko)")
+    print(f"\nindex.html genere ({len(html)//1024} Ko)")
 
 if __name__ == "__main__":
     main()
