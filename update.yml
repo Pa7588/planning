@@ -33,7 +33,7 @@ jobs:
           git config user.name "Planning Bot"
           git config user.email "bot@planning"
           git add index.html
-          git diff --staged --quiet || git commit -m "Planning mis à jour le $(date '+%d/%m/%Y à %H:%M')"
+          git commit -m "Planning mis à jour le $(date '+%d/%m/%Y à %H:%M')" --allow-empty
           git push
 
       - name: Upload Pages artifact
