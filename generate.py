@@ -5,6 +5,35 @@ from datetime import datetime, date, timedelta
 import re
 import json
 
+# ─── CONGÉS ───────────────────────────────────────────────────────────────────
+
+def lire_conges():
+    """Lit conges.txt et retourne un dict nom -> set de dates ISO."""
+    conges = {}
+    import os
+    if not os.path.exists("conges.txt"):
+        return conges
+    with open("conges.txt", "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            idx = line.find(":")
+            if idx > 0:
+                nom = line[:idx].strip()
+                dates_str = line[idx+1:].strip()
+                if dates_str:
+                    from datetime import date
+                    dates = set()
+                    for d in dates_str.split(","):
+                        try:
+                            dates.add(date.fromisoformat(d.strip()))
+                        except:
+                            pass
+                    conges[nom] = dates
+    print(f"  -> {len(conges)} personnes avec conges charges")
+    return conges
+
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 CIBLES_URG = [
@@ -323,13 +352,13 @@ def parse_texte(texte):
 
 # ─── CONSTRUCTION DU PLANNING ─────────────────────────────────────────────────
 
-def construire_planning(toutes_entrees, seniors):
+def construire_planning(toutes_entrees, seniors, conges=None):
     planning = {}
     for m in MOIS_FR:
         planning[m] = {}
         for d in range(1, 32):
             planning[m][d] = {
-                nom: {"couleur": "vert", "postes": [], "repos": False, "seniors": []}
+                nom: {"couleur": "vert", "postes": [], "repos": False, "seniors": [], "conge": False}
                 for nom in CIBLES
             }
 
@@ -417,6 +446,25 @@ def construire_planning(toutes_entrees, seniors):
                     cell_r["repos"] = True
 
     print(f"  -> {nb_seniors_trouves} associations interne-senior trouvees")
+
+    # Marquer les congés
+    if conges:
+        nb_conges = 0
+        for nom, dates in conges.items():
+            if nom not in CIBLES:
+                continue
+            for d in dates:
+                try:
+                    mois = MOIS_FR[d.month - 1]
+                    jour = d.day
+                    if mois in planning and jour in planning[mois]:
+                        cell = planning[mois][jour][nom]
+                        if cell["couleur"] == "vert":  # seulement si libre
+                            cell["conge"] = True
+                            nb_conges += 1
+                except:
+                    pass
+        print(f"  -> {nb_conges} jours de conges marques")
 
     # Ecrire les manquants dans un fichier debug
     if manquants:
@@ -524,6 +572,7 @@ def generer_html(planning, date_maj):
                 seniors_html = ""
                 for s in cell["seniors"]:
                     seniors_html += f'<span class="slot-senior">{s}</span>'
+                conge_html = '<span class="slot-conge">🏖️ Congé</span>' if cell.get("conge") else ''
 
                 seniors_data = "|".join(cell["seniors"]).replace('"', '&quot;')
                 slots += (
@@ -533,6 +582,7 @@ def generer_html(planning, date_maj):
                     f'data-couleur="{c}" '
                     f'style="{couleur_css(c)}" title="{nom_attr} — {label}">'
                     f'<span class="slot-name">{prenom}</span>'
+                    f'{conge_html}'
                     f'{seniors_html}'
                     f'<span class="slot-poste">{label}</span></div>'
                 )
@@ -879,6 +929,7 @@ document.getElementById('popupOverlay').addEventListener('click', function(e) {{
 def main():
     print("Generation du planning...")
     seniors = fetch_seniors()
+    conges = lire_conges()
 
     toutes_entrees = []
     for nom, url in PLANNINGS.items():
@@ -889,8 +940,10 @@ def main():
         print(f"     {len(entrees)} entrees, dont {len(cibles)} pour les cibles")
         toutes_entrees.extend(entrees)
 
-    planning = construire_planning(toutes_entrees, seniors)
-    date_maj = datetime.now().strftime("%d/%m/%Y a %H:%M")
+    planning = construire_planning(toutes_entrees, seniors, conges)
+    from datetime import timezone
+    tz_paris = timezone(timedelta(hours=2))  # UTC+2 ete
+    date_maj = datetime.now(tz_paris).strftime("%d/%m/%Y a %H:%M")
     html = generer_html(planning, date_maj)
     with open("index.html", "w", encoding="utf-8") as f:
         f.write(html)
