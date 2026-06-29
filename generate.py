@@ -609,6 +609,31 @@ def generer_html(planning, date_maj):
             f'<input type="checkbox" id="cb_{sid}" data-nom="{nom}" checked onchange="applyCustom()">'
             f'<span>{nom}</span></label>'
         )
+    # Checkboxes surbrillance (non cochées par défaut)
+    checkboxes_urg_surb = ""
+    for nom in CIBLES_URG:
+        sid = re.sub(r'[\s\.\-]', '_', nom)
+        checkboxes_urg_surb += (
+            f'<label class="cb-label" for="surb_{sid}">'
+            f'<input type="checkbox" id="surb_{sid}" data-nom="{nom}" onchange="applySurbrillance()">'
+            f'<span>{nom}</span></label>'
+        )
+    checkboxes_geria_surb = ""
+    for nom in CIBLES_GERIA:
+        sid = re.sub(r'[\s\.\-]', '_', nom)
+        checkboxes_geria_surb += (
+            f'<label class="cb-label" for="surb_{sid}">'
+            f'<input type="checkbox" id="surb_{sid}" data-nom="{nom}" onchange="applySurbrillance()">'
+            f'<span>{nom}</span></label>'
+        )
+    checkboxes_ffi_surb = ""
+    for nom in CIBLES_FFI:
+        sid = re.sub(r'[\s\.\-]', '_', nom)
+        checkboxes_ffi_surb += (
+            f'<label class="cb-label" for="surb_{sid}">'
+            f'<input type="checkbox" id="surb_{sid}" data-nom="{nom}" onchange="applySurbrillance()">'
+            f'<span>{nom}</span></label>'
+        )
 
     mois_sections = ""
     for mois in MOIS_FR:
@@ -761,6 +786,8 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 .ferie-badge {{ font-size:0.5rem; background:#b45309; color:white; padding:1px 4px; border-radius:3px; text-transform:uppercase; }}
 .slot {{ border-radius:4px; padding:3px 5px; margin-bottom:3px; font-size:0.62rem; display:flex; flex-direction:column; gap:1px; line-height:1.2; }}
 .slot.hidden {{ display:none; }}
+.slot.surbrillance {{ outline:2px solid #f59e0b; outline-offset:1px; z-index:1; position:relative; }}
+.slot.dimmed {{ opacity:0.35; }}
 .slot.urg   {{ border-left:2px solid #c0392b55; }}
 .slot.geria {{ border-left:2px solid #1a6b3a55; }}
 .slot.ffi   {{ border-left:2px solid #0891b255; }}
@@ -835,6 +862,23 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 </head>
 <body>
 <div class="overlay" id="overlay" onclick="closePanel()"></div>
+<div class="overlay" id="overlaySurb" onclick="closeSurbrillance()"></div>
+<div class="custom-panel" id="surbrillancePanel">
+  <div class="panel-header">
+    <h3>Surbrillance</h3>
+    <button class="panel-close" onclick="closeSurbrillance()">✕</button>
+  </div>
+  <div class="panel-actions">
+    <button class="panel-action-btn" onclick="selectAllSurb()">Tout cocher</button>
+    <button class="panel-action-btn" onclick="selectNoneSurb()">Tout décocher</button>
+  </div>
+  <div class="panel-group-title urg-title">Urgences</div>
+  <div id="surbUrg">{checkboxes_urg_surb}</div>
+  <div class="panel-group-title geria-title">Gériatrie</div>
+  <div id="surbGeria">{checkboxes_geria_surb}</div>
+  <div class="panel-group-title ffi-title">FFI</div>
+  <div id="surbFfi">{checkboxes_ffi_surb}</div>
+</div>
 <div class="custom-panel" id="customPanel">
   <div class="panel-header">
     <h3>Sélection</h3>
@@ -862,6 +906,7 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
     <button class="filter-btn" data-f="geria" onclick="setFilter('geria')">Gériatrie</button>
     <button class="filter-btn" data-f="ffi" onclick="setFilter('ffi')">FFI</button>
     <button class="filter-btn" data-f="custom" onclick="openPanel()">✎ Personnalisé</button>
+    <button class="filter-btn" id="btnSurbrillance" onclick="openSurbrillance()">⭐ Surbrillance</button>
   </div>
   <div class="maj-badge">⟳ Mis à jour le {date_maj}</div>
 </div>
@@ -936,6 +981,49 @@ function showMonth(m) {{
 const savedMois = localStorage.getItem('planning_mois');
 showMonth(savedMois || '{mois_defaut}');
 setFilter(currentFilter);
+
+// ── SURBRILLANCE ──────────────────────────────────────────────────────────────
+let surbSet = new Set(JSON.parse(localStorage.getItem('planning_surb') || '[]'));
+
+function applySurbrillance() {{
+  surbSet = new Set(
+    [...document.querySelectorAll('#surbrillancePanel input[type=checkbox]')]
+      .filter(cb => cb.checked).map(cb => cb.dataset.nom)
+  );
+  localStorage.setItem('planning_surb', JSON.stringify([...surbSet]));
+  const hasSurb = surbSet.size > 0;
+  document.querySelectorAll('.slot').forEach(s => {{
+    if (!hasSurb) {{
+      s.classList.remove('surbrillance', 'dimmed');
+    }} else if (surbSet.has(s.dataset.nom)) {{
+      s.classList.add('surbrillance');
+      s.classList.remove('dimmed');
+    }} else {{
+      s.classList.add('dimmed');
+      s.classList.remove('surbrillance');
+    }}
+  }});
+  document.getElementById('btnSurbrillance').classList.toggle('active', hasSurb);
+}}
+
+function openSurbrillance() {{
+  document.querySelectorAll('#surbrillancePanel input').forEach(cb => {{
+    cb.checked = surbSet.has(cb.dataset.nom);
+  }});
+  document.getElementById('surbrillancePanel').classList.add('open');
+  document.getElementById('overlaySurb').classList.add('open');
+}}
+
+function closeSurbrillance() {{
+  document.getElementById('surbrillancePanel').classList.remove('open');
+  document.getElementById('overlaySurb').classList.remove('open');
+}}
+
+function selectAllSurb()  {{ document.querySelectorAll('#surbrillancePanel input').forEach(cb => cb.checked=true);  applySurbrillance(); }}
+function selectNoneSurb() {{ document.querySelectorAll('#surbrillancePanel input').forEach(cb => cb.checked=false); applySurbrillance(); }}
+
+// Restaurer surbrillance au chargement
+if (surbSet.size > 0) applySurbrillance();
 
 // ── POPUP DETAIL (mobile) ──────────────────────────────────────────────────
 const COULEURS_LABEL = {{
