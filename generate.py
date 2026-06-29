@@ -97,12 +97,59 @@ def seniors_pour_poste(poste, jour_date=None):
     p_norm = re.sub(r'\s+', ' ', p)
 
     # Détection des types de garde
-    est_13_8  = bool(re.search(r'13\s*h?\s*[-–]\s*8', p))   # 13h-8h : jour + nuit
-    est_18_8  = bool(re.search(r'18\s*h?\s*[-–]\s*8', p))   # 18h-8h : nuit seul
-    est_8_13  = bool(re.search(r'8\s*h?\s*[-–]\s*13', p))   # 8h-13h : jour seul
-    est_nuit  = 'nuit' in p or 'soir' in p or est_13_8 or est_18_8
+    est_13_8 = bool(re.search(r'13\s*h?\s*[-–]\s*8', p))
+    est_18_8 = bool(re.search(r'18\s*h?\s*[-–]\s*8', p))
+    est_8_13 = bool(re.search(r'8\s*h?\s*[-–]\s*13', p))
+    est_13_18 = bool(re.search(r'13\s*h?\s*[-–]\s*18', p))
+    est_nuit = 'nuit' in p or 'soir' in p or est_13_8 or est_18_8
 
-    # ── RANGUEIL ──────────────────────────────────────────────────────────────
+    # ── NOUVEAUX POSTES RANGUEIL ───────────────────────────────────────────────
+
+    # RG HUB 1A nuit / RG HUB 1B nuit → Rg HUB1 Nuit
+    if 'rg hub 1' in p_norm and ('nuit' in p_norm or 'soir' in p_norm):
+        return ['Rg HUB1 Nuit']
+
+    # RG HUB 2A nuit / RG HUB 2B nuit → Rg HUB2 Nuit
+    if 'rg hub 2' in p_norm and ('nuit' in p_norm or 'soir' in p_norm):
+        return ['Rg HUB2 Nuit']
+
+    # RG HUB 1A sam 13h-8h → Rg HUB 1 Jour + Rg HUB1 Nuit
+    if 'rg hub 1' in p_norm and est_13_8:
+        return ['Rg HUB 1 Jour', 'Rg HUB1 Nuit']
+
+    # RG HUB 2A/B sam 13h-8h → Rg HUB 2 Jour + Rg HUB2 Nuit
+    if 'rg hub 2' in p_norm and est_13_8:
+        return ['Rg HUB 2 Jour', 'Rg HUB2 Nuit']
+
+    # RG HUB 1B sam 13-18h → Rg HUB 1 Jour (demi-garde jour)
+    if 'rg hub 1' in p_norm and est_13_18:
+        return ['Rg HUB 1 Jour']
+
+    # RG HUB 1B sam 18h-8h → Rg HUB1 Nuit
+    if 'rg hub 1' in p_norm and est_18_8:
+        return ['Rg HUB1 Nuit']
+
+    # RG HUB 1 sam 8-13h / RG HUB 1 jour → Rg HUB 1 Jour
+    if 'rg hub 1' in p_norm:
+        return ['Rg HUB 1 Jour']
+
+    # RG HUB 2 sam 8-13h / RG HUB 2 jour → Rg HUB 2 Jour
+    if 'rg hub 2' in p_norm:
+        return ['Rg HUB 2 Jour']
+
+    # RG ETOILE → Rg HUB 1 Jour + Rg HUB 2 Jour (pour l'instant)
+    if 'rg etoile' in p_norm or 'rg étoile' in p_norm:
+        return ['Rg HUB 1 Jour', 'Rg HUB 2 Jour']
+
+    # UHCD matin/CM aprem Rangueil → Rg UHCD + CMCT + Rg SAUV JOUR
+    if 'uhcd' in p_norm and 'rangueil' in p_norm:
+        return ['Rg UHCD', 'CMCT', 'Rg SAUV JOUR']
+
+    # LDS R → personne
+    if 'lds r' in p_norm:
+        return []
+
+    # ── ANCIENS POSTES RANGUEIL (inchangés) ────────────────────────────────────
     if 'amct 1' in p_norm:
         if est_13_8: return ['MAO', 'MAO NUIT']
         return ['MAO NUIT'] if est_nuit else ['MAO']
@@ -126,13 +173,16 @@ def seniors_pour_poste(poste, jour_date=None):
     if 'ua' in p_norm and ('jour' in p_norm or 'rééval' in p_norm):
         return ['AMT Med Rev Purpan']
 
+    if 'ua j' in p_norm:
+        return ['AMT Med Rev Purpan']
+
     if 'ua' in p_norm and 'we' in p_norm:
         return ['AMT Med Rev Purpan']
 
     if 'ua' in p_norm:
         return ['AMT Med Rev Soir Purpan']
 
-    # ── PURPAN ────────────────────────────────────────────────────────────────
+    # ── PURPAN (inchangé) ─────────────────────────────────────────────────────
     if 'hub 1' in p_norm:
         if est_13_8: return ['AMT HUB 1 Purpan', 'AMT HUB 1 Nuit']
         return ['AMT HUB 1 Nuit'] if est_nuit else ['AMT HUB 1 Purpan']
@@ -299,6 +349,7 @@ def est_poste_urg(s):
         'hub', 'amct', 'cmct', 'lds', 'sauv', 'ua ', 'ua/', 'uhcd',
         'nuit', 'jour', 'sam ', 'we/', 'week-end', 'rééval',
         '8h', '13h', '18h', '8-13', '13-8', '18-8',
+        'rg hub', 'rg etoile', 'rg étoile', 'lds r', 'ua j',
     ])
 
 def est_poste_valide(s):
