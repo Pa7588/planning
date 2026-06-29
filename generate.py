@@ -37,7 +37,7 @@ def lire_conges():
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 
 CIBLES_URG = [
-    "M. Belhomme De Franqueville", "L. Okoyi Ossouka Mapangou", "E. Beros",
+    "M. Belhomme De Franqueville", "E. Beros",
     "P. Messina", "J. Peyres", "S. Niane", "C. Vasseur", "J. Blanc",
     "A. Khadraoui", "M. Harhour", "E. Perthuisot", "R. Pebay", "I. Mokhtari",
     "A. Ponton", "E. Macabiau", "J. Langlois", "A. Wilhelm", "C. Viola",
