@@ -48,7 +48,11 @@ CIBLES_GERIA = [
     "T. Bourot", "M. Gratesac", "C. Gorra",
 ]
 
-CIBLES = CIBLES_URG + CIBLES_GERIA
+CIBLES_FFI = [
+    "L. Hachez", "A. Cadet", "C. Durante", "C. Delor", "J. Morel", "J. Breibach",
+]
+
+CIBLES = CIBLES_URG + CIBLES_GERIA + CIBLES_FFI
 
 PLANNINGS = {
     "gardes_purpan":   "https://app.planning.lifen.health/external/plannings/513b393c3c6a11e88b24",
@@ -105,41 +109,49 @@ def seniors_pour_poste(poste, jour_date=None):
 
     # ── NOUVEAUX POSTES RANGUEIL ───────────────────────────────────────────────
 
-    # RG HUB 1A nuit / RG HUB 1B nuit → Rg HUB1 Nuit
-    if 'rg hub 1' in p_norm and ('nuit' in p_norm or 'soir' in p_norm):
-        return ['Rg HUB1 Nuit']
+    # ── Helpers pour les clés avec/sans espace (HUB1 vs HUB 1) ─────────────────
+    # Planning-medical écrit parfois "Rg HUB1 Jour" et parfois "Rg HUB 2 Jour"
+    # On utilise les deux variantes pour matcher
+    HUB1_JOUR = ['Rg HUB1 Jour', 'Rg HUB 1 Jour']
+    HUB2_JOUR = ['Rg HUB2 Jour', 'Rg HUB 2 Jour']
+    HUB1_NUIT = ['Rg HUB1 Nuit', 'Rg HUB 1 Nuit']
+    HUB2_NUIT = ['Rg HUB2 Nuit', 'Rg HUB 2 Nuit']
 
-    # RG HUB 2A nuit / RG HUB 2B nuit → Rg HUB2 Nuit
+    # RG HUB 1A/B nuit → Rg HUB1 Nuit
+    if 'rg hub 1' in p_norm and ('nuit' in p_norm or 'soir' in p_norm):
+        return HUB1_NUIT
+
+    # RG HUB 2A/B nuit → Rg HUB2 Nuit
     if 'rg hub 2' in p_norm and ('nuit' in p_norm or 'soir' in p_norm):
-        return ['Rg HUB2 Nuit']
+        return HUB2_NUIT
 
     # RG HUB 1A sam 13h-8h → Rg HUB 1 Jour + Rg HUB1 Nuit
     if 'rg hub 1' in p_norm and est_13_8:
-        return ['Rg HUB 1 Jour', 'Rg HUB1 Nuit']
+        return HUB1_JOUR + HUB1_NUIT
 
     # RG HUB 2A/B sam 13h-8h → Rg HUB 2 Jour + Rg HUB2 Nuit
     if 'rg hub 2' in p_norm and est_13_8:
-        return ['Rg HUB 2 Jour', 'Rg HUB2 Nuit']
+        return HUB2_JOUR + HUB2_NUIT
 
-    # RG HUB 1B sam 13-18h → Rg HUB 1 Jour (demi-garde jour)
+    # RG HUB 1B sam 13-18h → Rg HUB 1 Jour
     if 'rg hub 1' in p_norm and est_13_18:
-        return ['Rg HUB 1 Jour']
+        return HUB1_JOUR
 
     # RG HUB 1B sam 18h-8h → Rg HUB1 Nuit
     if 'rg hub 1' in p_norm and est_18_8:
-        return ['Rg HUB1 Nuit']
+        return HUB1_NUIT
 
-    # RG HUB 1 sam 8-13h / RG HUB 1 jour → Rg HUB 1 Jour
+    # RG HUB 1 sam 8-13h / jour
     if 'rg hub 1' in p_norm:
-        return ['Rg HUB 1 Jour']
+        return HUB1_JOUR
 
-    # RG HUB 2 sam 8-13h / RG HUB 2 jour → Rg HUB 2 Jour
+    # RG HUB 2 sam 8-13h / jour
     if 'rg hub 2' in p_norm:
-        return ['Rg HUB 2 Jour']
+        return HUB2_JOUR
 
-    # RG ETOILE → Rg HUB 1 Jour + Rg HUB 2 Jour (pour l'instant)
+    # RG ETOILE → Rg HUB 1 Jour + Rg HUB 2 Jour
     if 'rg etoile' in p_norm or 'rg étoile' in p_norm:
-        return ['Rg HUB 1 Jour', 'Rg HUB 2 Jour']
+        return HUB1_JOUR + HUB2_JOUR
 
     # UHCD matin/CM aprem Rangueil → Rg UHCD + CMCT + Rg SAUV JOUR
     if 'uhcd' in p_norm and 'rangueil' in p_norm:
@@ -453,23 +465,26 @@ def construire_planning(toutes_entrees, seniors, conges=None):
         jour_seniors = seniors.get(date_iso, {})
         cles = seniors_pour_poste(poste, jour_date)
 
+        deja_matches = set()  # Eviter doublons (ex: Rg HUB1 Jour vs Rg HUB 1 Jour)
         for cle in cles:
             cle_norm = re.sub(r'\s+', ' ', cle.lower().strip())
+            if cle_norm in deja_matches:
+                continue
             trouve = False
             for k, v in jour_seniors.items():
                 k_norm = re.sub(r'\s+', ' ', k.lower().strip())
                 if cle_norm == k_norm:
+                    deja_matches.add(cle_norm)
                     if isinstance(v, dict):
                         if 'pourvoir' in v.get('long','').lower() or 'pourvoir' in v.get('court','').lower():
                             label = "Pas de senior"
                         else:
-                            # Format: "Vinnemann Nathalie (MAO)"
-                            label = f"{v['long']} ({cle})"
+                            label = f"{v['long']} ({k})"
                     elif isinstance(v, str):
                         if 'pourvoir' in v.lower():
                             label = "Pas de senior"
                         else:
-                            label = f"{v} ({cle})"
+                            label = f"{v} ({k})"
                     else:
                         label = "Pas de senior"
                     if label not in cell["seniors"]:
@@ -478,7 +493,6 @@ def construire_planning(toutes_entrees, seniors, conges=None):
                     trouve = True
                     break
             if not trouve and jour_seniors:
-                # Log les manquants pour debug
                 key = f"{poste} -> {cle}"
                 if key not in manquants:
                     manquants[key] = date_iso
@@ -559,6 +573,7 @@ def generer_html(planning, date_maj):
 
     cibles_urg_json   = json.dumps(CIBLES_URG,  ensure_ascii=False)
     cibles_geria_json = json.dumps(CIBLES_GERIA, ensure_ascii=False)
+    cibles_ffi_json   = json.dumps(CIBLES_FFI,   ensure_ascii=False)
     cibles_all_json   = json.dumps(CIBLES,       ensure_ascii=False)
 
     legende_html = "".join(
@@ -582,6 +597,14 @@ def generer_html(planning, date_maj):
     for nom in CIBLES_GERIA:
         sid = re.sub(r'[\s\.\-]', '_', nom)
         checkboxes_geria += (
+            f'<label class="cb-label" for="cb_{sid}">'
+            f'<input type="checkbox" id="cb_{sid}" data-nom="{nom}" checked onchange="applyCustom()">'
+            f'<span>{nom}</span></label>'
+        )
+    checkboxes_ffi = ""
+    for nom in CIBLES_FFI:
+        sid = re.sub(r'[\s\.\-]', '_', nom)
+        checkboxes_ffi += (
             f'<label class="cb-label" for="cb_{sid}">'
             f'<input type="checkbox" id="cb_{sid}" data-nom="{nom}" checked onchange="applyCustom()">'
             f'<span>{nom}</span></label>'
@@ -692,6 +715,7 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 .filter-btn[data-f="tous"].active {{ background:#374151; }}
 .filter-btn[data-f="urg"].active {{ background:#c0392b; }}
 .filter-btn[data-f="geria"].active {{ background:#1a6b3a; }}
+.filter-btn[data-f="ffi"].active {{ background:#0891b2; }}
 .filter-btn[data-f="custom"].active {{ background:#7c3aed; }}
 .custom-panel {{ display:none; position:fixed; top:0; right:0; bottom:0; width:320px; background:var(--surface); border-left:1px solid var(--border); z-index:100; overflow-y:auto; padding:24px; box-shadow:-8px 0 32px rgba(0,0,0,0.4); }}
 .custom-panel.open {{ display:block; }}
@@ -703,6 +727,7 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 .panel-group-title::after {{ content:''; flex:1; height:1px; background:var(--border); }}
 .panel-group-title.urg-title {{ color:#e87070; }}
 .panel-group-title.geria-title {{ color:#6bcf8f; }}
+.panel-group-title.ffi-title {{ color:#38bdf8; }}
 .panel-actions {{ display:flex; gap:6px; margin-bottom:16px; flex-wrap:wrap; }}
 .panel-action-btn {{ font-family:'DM Mono',monospace; font-size:0.65rem; padding:4px 10px; border:1px solid var(--border); border-radius:4px; background:transparent; color:var(--text-dim); cursor:pointer; }}
 .panel-action-btn:hover {{ color:var(--text); border-color:var(--accent); }}
@@ -738,6 +763,7 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 .slot.hidden {{ display:none; }}
 .slot.urg   {{ border-left:2px solid #c0392b55; }}
 .slot.geria {{ border-left:2px solid #1a6b3a55; }}
+.slot.ffi   {{ border-left:2px solid #0891b255; }}
 .slot-name {{ font-weight:500; }}
 .slot-senior {{ font-size:0.55rem; font-style:italic; color:var(--text-dim); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; opacity:0.85; }}
 .slot-poste {{ opacity:0.75; font-size:0.56rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }}
@@ -819,11 +845,14 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
     <button class="panel-action-btn" onclick="selectNone()">Tout décocher</button>
     <button class="panel-action-btn" onclick="selectGroup('urg')">Urg seuls</button>
     <button class="panel-action-btn" onclick="selectGroup('geria')">Géria seuls</button>
+    <button class="panel-action-btn" onclick="selectGroup('ffi')">FFI seuls</button>
   </div>
   <div class="panel-group-title urg-title">Urgences</div>
   <div id="cbsUrg">{checkboxes_urg}</div>
   <div class="panel-group-title geria-title">Gériatrie</div>
   <div id="cbsGeria">{checkboxes_geria}</div>
+  <div class="panel-group-title ffi-title">FFI</div>
+  <div id="cbsFfi">{checkboxes_ffi}</div>
 </div>
 <div class="header">
   <h1>Planning</h1>
@@ -831,6 +860,7 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
     <button class="filter-btn active" data-f="tous" onclick="setFilter('tous')">Tous</button>
     <button class="filter-btn" data-f="urg" onclick="setFilter('urg')">Urgences</button>
     <button class="filter-btn" data-f="geria" onclick="setFilter('geria')">Gériatrie</button>
+    <button class="filter-btn" data-f="ffi" onclick="setFilter('ffi')">FFI</button>
     <button class="filter-btn" data-f="custom" onclick="openPanel()">✎ Personnalisé</button>
   </div>
   <div class="maj-badge">⟳ Mis à jour le {date_maj}</div>
@@ -841,6 +871,7 @@ body {{ font-family:'DM Mono',monospace; background:var(--bg); color:var(--text)
 <script>
 const CIBLES_URG   = {cibles_urg_json};
 const CIBLES_GERIA = {cibles_geria_json};
+const CIBLES_FFI   = {cibles_ffi_json};
 const CIBLES_ALL   = {cibles_all_json};
 let currentFilter = localStorage.getItem('planning_filtre') || 'tous';
 let customSet = new Set(JSON.parse(localStorage.getItem('planning_custom') || 'null') || CIBLES_ALL);
@@ -858,6 +889,7 @@ function setFilter(f) {{
   if (f === 'tous')   applyVisibility(new Set(CIBLES_ALL));
   if (f === 'urg')    applyVisibility(new Set(CIBLES_URG));
   if (f === 'geria')  applyVisibility(new Set(CIBLES_GERIA));
+  if (f === 'ffi')    applyVisibility(new Set(CIBLES_FFI));
   if (f === 'custom') applyCustom();
 }}
 function applyCustom() {{
@@ -888,7 +920,7 @@ function closePanel() {{
 function selectAll()  {{ document.querySelectorAll('#customPanel input').forEach(cb => cb.checked=true);  applyCustom(); }}
 function selectNone() {{ document.querySelectorAll('#customPanel input').forEach(cb => cb.checked=false); applyCustom(); }}
 function selectGroup(g) {{
-  const s = new Set(g==='urg' ? CIBLES_URG : CIBLES_GERIA);
+  const s = new Set(g==='urg' ? CIBLES_URG : (g==='ffi' ? CIBLES_FFI : CIBLES_GERIA));
   document.querySelectorAll('#customPanel input').forEach(cb => {{ cb.checked = s.has(cb.dataset.nom); }});
   applyCustom();
 }}
